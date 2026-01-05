@@ -7,16 +7,13 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="manifest" href="./public/manifest.json">
-    <title>הרפתקת המתמטיקה</title>
+    <title>הרפתקת המתמטיקה של ישראל</title>
     
-    <!-- Core Libraries -->
+    <!-- Core Libraries (UMD) - Loaded before the script -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Recharts - Loading via UMD after React -->
     <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
     
     <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -27,42 +24,37 @@
             touch-action: manipulation;
             background: linear-gradient(to bottom right, #e0e7ff, #f3e8ff);
             min-height: 100vh;
+            margin: 0;
         }
         * {
             user-select: none;
             -webkit-tap-highlight-color: transparent;
+            box-sizing: border-box;
         }
         .animate-fade-in { animation: fadeIn 0.5s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .helper-table td, .helper-table th {
+            padding: 4px;
+            border: 1px solid #e2e8f0;
+            text-align: center;
+            font-size: 0.7rem;
+        }
+        @media (min-width: 640px) {
+            .helper-table td, .helper-table th { padding: 8px; font-size: 0.9rem; }
+        }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "recharts": "https://esm.sh/recharts@^3.6.0"
-  }
-}
-</script>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        // Crucial: Use the global variables assigned by the scripts above
-        const { useState, useEffect, useMemo } = React;
-        const { 
-          PieChart, Pie, Cell, ResponsiveContainer, 
-          BarChart, Bar, XAxis, YAxis, Tooltip, Legend 
-        } = window.Recharts;
+        const { useState, useEffect } = React;
 
-        // Constants & Enums
-        const GameState = { START: 'START', PLAYING: 'PLAYING', SUMMARY: 'SUMMARY', ANALYTICS: 'ANALYTICS' };
+        const GameState = { START: 'START', PLAYING: 'PLAYING', SUMMARY: 'SUMMARY' };
         const GameMode = { TIMED: 'TIMED', RELAXED: 'RELAXED' };
         const DifficultyLevel = { BASIC: 'BASIC', ADVANCED: 'ADVANCED' };
 
-        // Math Logic
         const generateQuestion = (level = DifficultyLevel.BASIC) => {
           const isMultiplication = Math.random() > 0.5;
           let n1, n2, ansValue, operation;
@@ -115,19 +107,14 @@
           const [gameMode, setGameMode] = useState(GameMode.TIMED);
           const [level, setLevel] = useState(DifficultyLevel.BASIC);
           const [currentQuestion, setCurrentQuestion] = useState(null);
-          const [stats, setStats] = useState({ score: 0, streak: 0, totalAnswered: 0, correctAnswers: 0, results: [] });
+          const [stats, setStats] = useState({ score: 0, streak: 0, totalAnswered: 0, correctAnswers: 0 });
           const [feedback, setFeedback] = useState(null);
           const [timer, setTimer] = useState(60);
           const [isPaused, setIsPaused] = useState(false);
-          const [sessions, setSessions] = useState([]);
-
-          useEffect(() => {
-            const saved = localStorage.getItem('math_sessions_final');
-            if (saved) setSessions(JSON.parse(saved));
-          }, []);
+          const [showHelper, setShowHelper] = useState(false);
 
           const startNewGame = (mode, lvl) => {
-            setStats({ score: 0, streak: 0, totalAnswered: 0, correctAnswers: 0, results: [] });
+            setStats({ score: 0, streak: 0, totalAnswered: 0, correctAnswers: 0 });
             setGameMode(mode);
             setLevel(lvl);
             setGameState(GameState.PLAYING);
@@ -141,24 +128,23 @@
             let interval;
             if (gameState === GameState.PLAYING && gameMode === GameMode.TIMED && timer > 0 && !isPaused) {
               interval = setInterval(() => setTimer(t => t - 1), 1000);
-            } else if (timer === 0 && gameState === GameState.PLAYING) {
-              finishGame();
+            } else if (timer === 0 && gameState === GameState.PLAYING && gameMode === GameMode.TIMED) {
+              setGameState(GameState.SUMMARY);
             }
             return () => clearInterval(interval);
-          }, [gameState, timer, isPaused]);
+          }, [gameState, timer, isPaused, gameMode]);
 
           const handleAnswer = (choice) => {
             if (!currentQuestion || feedback) return;
             const isCorrect = choice === currentQuestion.answer;
-            const newStats = {
-              ...stats,
-              totalAnswered: stats.totalAnswered + 1,
-              correctAnswers: isCorrect ? stats.correctAnswers + 1 : stats.correctAnswers,
-              streak: isCorrect ? stats.streak + 1 : 0,
-              score: isCorrect ? stats.score + (10 * (stats.streak + 1)) : stats.score,
-              results: [...stats.results, { ...currentQuestion, selectedAnswer: choice, isCorrect, timeTaken: Date.now() - currentQuestion.startTime }]
-            };
-            setStats(newStats);
+            
+            setStats(prev => ({
+              ...prev,
+              totalAnswered: prev.totalAnswered + 1,
+              correctAnswers: isCorrect ? prev.correctAnswers + 1 : prev.correctAnswers,
+              streak: isCorrect ? prev.streak + 1 : 0,
+              score: isCorrect ? prev.score + (10 * (prev.streak + 1)) : prev.score,
+            }));
 
             if (isCorrect) {
               setFeedback({ type: 'success', message: "כל הכבוד! תשובה נכונה!" });
@@ -172,36 +158,22 @@
             }
           };
 
-          const finishGame = () => {
-            const session = {
-              date: new Date().toLocaleDateString('he-IL'),
-              accuracy: Math.round((stats.correctAnswers / (stats.totalAnswered || 1)) * 100),
-              score: stats.score,
-              level: level
-            };
-            const updated = [session, ...sessions].slice(0, 20);
-            setSessions(updated);
-            localStorage.setItem('math_sessions_final', JSON.stringify(updated));
-            setGameState(GameState.SUMMARY);
-          };
-
           return (
-            <div className="p-4 md:p-8 flex flex-col items-center justify-center min-h-screen" dir="rtl">
-              <div className="max-w-xl w-full bg-white rounded-3xl shadow-2xl p-6 md:p-10 border-4 border-indigo-200 relative">
-                
+            <div className="p-4 md:p-8 flex flex-col items-center justify-center min-h-screen">
+              <div className={`${showHelper ? 'max-w-4xl' : 'max-w-xl'} w-full bg-white rounded-3xl shadow-2xl p-6 md:p-10 border-4 border-indigo-200 relative transition-all duration-500`}>
                 {gameState === GameState.START && (
                   <div className="text-center space-y-8 animate-fade-in">
                     <h1 className="text-4xl font-black text-indigo-700 italic">הרפתקת המתמטיקה! 🚀</h1>
                     <div className="space-y-4">
                       <div className="bg-indigo-50 p-6 rounded-3xl border-2 border-indigo-100">
-                        <h3 className="font-bold text-indigo-700 mb-4 text-xl text-center">רמה 1: בסיס 🌟</h3>
+                        <h3 className="font-bold text-indigo-700 mb-4 text-xl">רמה 1: בסיס 🌟</h3>
                         <div className="grid grid-cols-2 gap-4">
                           <button onClick={() => startNewGame(GameMode.TIMED, DifficultyLevel.BASIC)} className="bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-md">זמן ⏱️</button>
                           <button onClick={() => startNewGame(GameMode.RELAXED, DifficultyLevel.BASIC)} className="bg-white text-indigo-600 border-2 border-indigo-600 font-bold py-3 rounded-xl shadow-md">חופשי 🧘</button>
                         </div>
                       </div>
                       <div className="bg-purple-50 p-6 rounded-3xl border-2 border-purple-100">
-                        <h3 className="font-bold text-purple-700 mb-4 text-xl text-center">רמה 2: מתקדם 🧠</h3>
+                        <h3 className="font-bold text-purple-700 mb-4 text-xl">רמה 2: מתקדם 🧠</h3>
                         <div className="grid grid-cols-2 gap-4">
                           <button onClick={() => startNewGame(GameMode.TIMED, DifficultyLevel.ADVANCED)} className="bg-purple-600 text-white font-bold py-3 rounded-xl shadow-md">זמן ⏱️</button>
                           <button onClick={() => startNewGame(GameMode.RELAXED, DifficultyLevel.ADVANCED)} className="bg-white text-purple-600 border-2 border-purple-600 font-bold py-3 rounded-xl shadow-md">חופשי 🧘</button>
@@ -212,45 +184,58 @@
                 )}
 
                 {gameState === GameState.PLAYING && currentQuestion && (
-                  <div className="space-y-8 text-center">
-                    <div className="flex justify-between items-center mb-4">
-                       <span className="bg-indigo-600 text-white px-3 py-1 rounded-full text-xs font-bold">ניקוד: {stats.score}</span>
-                       {gameMode === GameMode.TIMED && <span className="text-xl font-bold text-indigo-600">{timer} ⏱️</span>}
-                       <span className="bg-orange-400 text-white px-3 py-1 rounded-full text-xs font-bold">רצף: {stats.streak} 🔥</span>
-                    </div>
-
-                    <div className="bg-indigo-50 rounded-3xl p-8 flex justify-center items-center gap-4 text-5xl md:text-6xl font-black text-indigo-900 shadow-inner" dir="ltr">
-                      <span className={currentQuestion.missingPart === 'num1' ? 'text-pink-500' : ''}>{currentQuestion.num1}</span>
-                      <span className="text-indigo-300">{currentQuestion.operation}</span>
-                      <span className={currentQuestion.missingPart === 'num2' ? 'text-pink-500' : ''}>{currentQuestion.num2}</span>
-                      <span>=</span>
-                      <span className={currentQuestion.missingPart === 'result' ? 'text-pink-500' : ''}>{currentQuestion.result}</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4" dir="ltr">
-                      {currentQuestion.options.map((opt, i) => (
-                        <button key={i} onClick={() => handleAnswer(opt)} className="py-6 rounded-2xl text-3xl font-bold bg-white text-indigo-700 border-2 border-indigo-100 shadow-lg hover:bg-indigo-50 active:scale-95 transition-transform">{opt}</button>
-                      ))}
-                    </div>
-                    {feedback && (
-                      <div className="animate-fade-in">
-                        <FeedbackBubble type={feedback.type} message={feedback.message} />
-                        {feedback.type === 'error' && (
-                          <button onClick={() => { setFeedback(null); setIsPaused(false); setCurrentQuestion(generateQuestion(level)); }} className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg">המשך לתרגיל הבא 🚀</button>
-                        )}
+                  <div className={`grid grid-cols-1 ${showHelper ? 'lg:grid-cols-2' : ''} gap-8`}>
+                    {showHelper && (
+                      <div className="bg-yellow-50 border-4 border-yellow-200 rounded-3xl p-4 shadow-inner animate-fade-in order-2 lg:order-1">
+                        <div className="flex justify-between items-center mb-2">
+                          <p className="font-black text-yellow-800">לוח הכפל 💡</p>
+                          <button onClick={() => setShowHelper(false)} className="text-red-500 font-bold">X</button>
+                        </div>
+                        <table className="helper-table w-full bg-white" dir="ltr">
+                          <thead><tr><th className="bg-gray-100">x</th>{[...Array(10)].map((_, i) => <th key={i} className="bg-indigo-50 font-bold text-indigo-700">{i+1}</th>)}</tr></thead>
+                          <tbody>{[...Array(10)].map((_, i) => (
+                            <tr key={i}><th className="bg-indigo-50 font-bold text-indigo-700">{i+1}</th>{[...Array(10)].map((_, j) => <td key={j}>{(i+1)*(j+1)}</td>)}</tr>
+                          ))}</tbody>
+                        </table>
                       </div>
                     )}
+                    <div className="space-y-8 text-center order-1 lg:order-2">
+                      <div className="flex justify-between items-center mb-4">
+                         <span className="bg-indigo-600 text-white px-3 py-1 rounded-full text-xs font-bold">ניקוד: {stats.score}</span>
+                         {gameMode === GameMode.TIMED && <span className="text-xl font-bold text-indigo-600">{timer} ⏱️</span>}
+                         <span className="bg-orange-400 text-white px-3 py-1 rounded-full text-xs font-bold">רצף: {stats.streak} 🔥</span>
+                      </div>
+                      <div className="bg-indigo-50 rounded-3xl p-8 flex justify-center items-center gap-4 text-5xl md:text-6xl font-black text-indigo-900 shadow-inner" dir="ltr">
+                        <span className={currentQuestion.missingPart === 'num1' ? 'text-pink-500' : ''}>{currentQuestion.num1}</span>
+                        <span className="text-indigo-300">{currentQuestion.operation}</span>
+                        <span className={currentQuestion.missingPart === 'num2' ? 'text-pink-500' : ''}>{currentQuestion.num2}</span>
+                        <span>=</span>
+                        <span className={currentQuestion.missingPart === 'result' ? 'text-pink-500' : ''}>{currentQuestion.result}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4" dir="ltr">
+                        {currentQuestion.options.map((opt, i) => (
+                          <button key={i} onClick={() => handleAnswer(opt)} className="py-6 rounded-2xl text-3xl font-bold bg-white text-indigo-700 border-2 border-indigo-100 shadow-lg hover:bg-indigo-50">{opt}</button>
+                        ))}
+                      </div>
+                      {!showHelper && <button onClick={() => setShowHelper(true)} className="bg-yellow-400 text-yellow-900 font-bold px-4 py-2 rounded-xl text-sm">צריך עזרה? 💡</button>}
+                      {feedback && (
+                        <div className="animate-fade-in">
+                          <FeedbackBubble type={feedback.type} message={feedback.message} />
+                          {feedback.type === 'error' && <button onClick={() => { setFeedback(null); setIsPaused(false); setCurrentQuestion(generateQuestion(level)); }} className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-xl font-bold">המשך 🚀</button>}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
                 {gameState === GameState.SUMMARY && (
-                  <div className="text-center space-y-6 animate-fade-in">
+                  <div className="text-center space-y-6">
                     <h2 className="text-3xl font-black text-indigo-700">כל הכבוד! 🏆</h2>
-                    <div className="bg-indigo-50 p-6 rounded-2xl grid grid-cols-2 gap-4">
-                      <div><p className="text-gray-500 text-sm">דיוק</p><p className="text-2xl font-bold text-indigo-600">{Math.round((stats.correctAnswers/(stats.totalAnswered||1))*100)}%</p></div>
-                      <div><p className="text-gray-500 text-sm">נקודות</p><p className="text-2xl font-bold text-green-600">{stats.score}</p></div>
+                    <div className="bg-indigo-50 p-6 rounded-2xl">
+                      <p className="text-gray-500 text-sm">דיוק</p>
+                      <p className="text-3xl font-bold text-indigo-600">{Math.round((stats.correctAnswers/(stats.totalAnswered||1))*100)}%</p>
                     </div>
-                    <button onClick={() => setGameState(GameState.START)} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold shadow-xl">חזרה להתחלה 🔁</button>
+                    <button onClick={() => setGameState(GameState.START)} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold shadow-xl">חזרה להתחלה</button>
                   </div>
                 )}
               </div>
@@ -258,8 +243,7 @@
           );
         };
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     </script>
 </body>
 </html>
