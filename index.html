@@ -6,36 +6,260 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <!-- שינינו לנקודה לפני הנתיב כדי שזה יעבוד נכון בתיקיות משנה בגיטהאב -->
     <link rel="manifest" href="./public/manifest.json">
     <title>הרפתקת המתמטיקה</title>
+    
+    <!-- External Scripts (UMD Versions) -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Recharts depends on React, so it must be loaded after -->
+    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+    
     <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&display=swap" rel="stylesheet">
     <style>
         body {
             font-family: 'Assistant', sans-serif;
             overflow-x: hidden;
             touch-action: manipulation;
+            background: linear-gradient(to bottom right, #e0e7ff, #f3e8ff);
+            min-height: 100vh;
         }
         * {
             user-select: none;
             -webkit-tap-highlight-color: transparent;
         }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 <script type="importmap">
 {
   "imports": {
-    "recharts": "https://esm.sh/recharts@^3.6.0",
+    "react": "https://esm.sh/react@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3"
+    "recharts": "https://esm.sh/recharts@^3.6.0"
   }
 }
 </script>
 </head>
-<body class="bg-indigo-50">
+<body>
     <div id="root"></div>
-    <!-- טעינת הקוד הראשי -->
-    <script type="module" src="./index.tsx"></script>
+
+    <script type="text/babel">
+        // Accessing global variables provided by UMD scripts
+        const { useState, useEffect, useMemo } = React;
+        const { 
+          PieChart, Pie, Cell, ResponsiveContainer, 
+          BarChart, Bar, XAxis, YAxis, Tooltip, Legend 
+        } = window.Recharts; // Explicitly use window.Recharts to ensure it's found
+
+        // Constants
+        const GameState = { START: 'START', PLAYING: 'PLAYING', SUMMARY: 'SUMMARY', ANALYTICS: 'ANALYTICS' };
+        const GameMode = { TIMED: 'TIMED', RELAXED: 'RELAXED' };
+        const DifficultyLevel = { BASIC: 'BASIC', ADVANCED: 'ADVANCED' };
+
+        // Math Generator Service
+        const generateQuestion = (level = DifficultyLevel.BASIC, maxNum = 10) => {
+          const isMultiplication = Math.random() > 0.5;
+          let n1, n2, ansValue, operation;
+          if (isMultiplication) {
+            n1 = Math.floor(Math.random() * 9) + 2;
+            n2 = Math.floor(Math.random() * 9) + 2;
+            ansValue = n1 * n2;
+            operation = 'x';
+          } else {
+            const f1 = Math.floor(Math.random() * 9) + 2;
+            const f2 = Math.floor(Math.random() * 9) + 2;
+            ansValue = f2;
+            n1 = f1 * f2;
+            n2 = f1;
+            operation = '÷';
+          }
+          let missingPart = 'result';
+          let correctAnswer = ansValue;
+          if (level === DifficultyLevel.ADVANCED) {
+            const r = Math.random();
+            if (r < 0.33) { missingPart = 'num1'; correctAnswer = n1; }
+            else if (r < 0.66) { missingPart = 'num2'; correctAnswer = n2; }
+          }
+          const options = new Set([correctAnswer]);
+          while (options.size < 4) {
+            const fake = Math.abs(correctAnswer + (Math.floor(Math.random() * 5) + 1) * (Math.random() > 0.5 ? 1 : -1));
+            if (fake !== correctAnswer && fake > 0) options.add(fake);
+          }
+          return {
+            num1: missingPart === 'num1' ? '?' : n1,
+            num2: missingPart === 'num2' ? '?' : n2,
+            result: missingPart === 'result' ? '?' : (isMultiplication ? n1*n2 : n1/n2),
+            operation,
+            answer: correctAnswer,
+            options: Array.from(options).sort((a, b) => a - b),
+            missingPart
+          };
+        };
+
+        const FeedbackBubble = ({ type, message }) => (
+          <div className={`mt-4 p-4 rounded-xl border-2 ${type === 'success' ? 'bg-green-100 border-green-400 text-green-700' : 'bg-orange-100 border-orange-400 text-orange-700'} flex items-center gap-3 animate-bounce`}>
+            <span className="text-2xl">{type === 'success' ? '🌟' : '💡'}</span>
+            <p className="font-bold text-lg">{message}</p>
+          </div>
+        );
+
+        const App = () => {
+          const [gameState, setGameState] = useState(GameState.START);
+          const [gameMode, setGameMode] = useState(GameMode.TIMED);
+          const [level, setLevel] = useState(DifficultyLevel.BASIC);
+          const [currentQuestion, setCurrentQuestion] = useState(null);
+          const [stats, setStats] = useState({ score: 0, streak: 0, totalAnswered: 0, correctAnswers: 0, results: [] });
+          const [feedback, setFeedback] = useState(null);
+          const [timer, setTimer] = useState(60);
+          const [isPaused, setIsPaused] = useState(false);
+          const [sessions, setSessions] = useState([]);
+
+          useEffect(() => {
+            const saved = localStorage.getItem('math_sessions_gh');
+            if (saved) setSessions(JSON.parse(saved));
+          }, []);
+
+          const startNewGame = (mode, lvl) => {
+            setStats({ score: 0, streak: 0, totalAnswered: 0, correctAnswers: 0, results: [] });
+            setGameMode(mode);
+            setLevel(lvl);
+            setGameState(GameState.PLAYING);
+            setTimer(60);
+            setFeedback(null);
+            setIsPaused(false);
+            const q = generateQuestion(lvl);
+            setCurrentQuestion({ ...q, startTime: Date.now() });
+          };
+
+          useEffect(() => {
+            let interval;
+            if (gameState === GameState.PLAYING && gameMode === GameMode.TIMED && timer > 0 && !isPaused) {
+              interval = setInterval(() => setTimer(t => t - 1), 1000);
+            } else if (timer === 0 && gameState === GameState.PLAYING) {
+              finishGame();
+            }
+            return () => clearInterval(interval);
+          }, [gameState, timer, isPaused]);
+
+          const handleAnswer = (choice) => {
+            if (!currentQuestion || feedback) return;
+            const isCorrect = choice === currentQuestion.answer;
+            const newStats = {
+              ...stats,
+              totalAnswered: stats.totalAnswered + 1,
+              correctAnswers: isCorrect ? stats.correctAnswers + 1 : stats.correctAnswers,
+              streak: isCorrect ? stats.streak + 1 : 0,
+              score: isCorrect ? stats.score + (10 * (stats.streak + 1)) : stats.score,
+              results: [...stats.results, { ...currentQuestion, selectedAnswer: choice, isCorrect, timeTaken: Date.now() - currentQuestion.startTime }]
+            };
+            setStats(newStats);
+
+            if (isCorrect) {
+              setFeedback({ type: 'success', message: "כל הכבוד! תשובה נכונה!" });
+              setTimeout(() => {
+                setFeedback(null);
+                const q = generateQuestion(level);
+                setCurrentQuestion({ ...q, startTime: Date.now() });
+              }, 1000);
+            } else {
+              setIsPaused(true);
+              setFeedback({ type: 'error', message: `לא נורא! התשובה היא ${currentQuestion.answer}.` });
+            }
+          };
+
+          const finishGame = () => {
+            const session = {
+              date: new Date().toLocaleDateString('he-IL'),
+              accuracy: Math.round((stats.correctAnswers / (stats.totalAnswered || 1)) * 100),
+              score: stats.score,
+              level: level
+            };
+            const updated = [session, ...sessions].slice(0, 20);
+            setSessions(updated);
+            localStorage.setItem('math_sessions_gh', JSON.stringify(updated));
+            setGameState(GameState.SUMMARY);
+          };
+
+          return (
+            <div className="p-4 md:p-8 flex flex-col items-center justify-center min-h-screen" dir="rtl">
+              <div className="max-w-xl w-full bg-white rounded-3xl shadow-2xl p-6 md:p-10 border-4 border-indigo-200 relative">
+                
+                {gameState === GameState.START && (
+                  <div className="text-center space-y-8 animate-fade-in">
+                    <h1 className="text-4xl font-black text-indigo-700 italic">הרפתקת המתמטיקה! 🚀</h1>
+                    <div className="space-y-4">
+                      <div className="bg-indigo-50 p-6 rounded-3xl border-2 border-indigo-100">
+                        <h3 className="font-bold text-indigo-700 mb-4 text-xl">רמה 1: בסיס 🌟</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                          <button onClick={() => startNewGame(GameMode.TIMED, DifficultyLevel.BASIC)} className="bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-md">זמן ⏱️</button>
+                          <button onClick={() => startNewGame(GameMode.RELAXED, DifficultyLevel.BASIC)} className="bg-white text-indigo-600 border-2 border-indigo-600 font-bold py-3 rounded-xl shadow-md">חופשי 🧘</button>
+                        </div>
+                      </div>
+                      <div className="bg-purple-50 p-6 rounded-3xl border-2 border-purple-100">
+                        <h3 className="font-bold text-purple-700 mb-4 text-xl">רמה 2: מתקדם 🧠</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                          <button onClick={() => startNewGame(GameMode.TIMED, DifficultyLevel.ADVANCED)} className="bg-purple-600 text-white font-bold py-3 rounded-xl shadow-md">זמן ⏱️</button>
+                          <button onClick={() => startNewGame(GameMode.RELAXED, DifficultyLevel.ADVANCED)} className="bg-white text-purple-600 border-2 border-purple-600 font-bold py-3 rounded-xl shadow-md">חופשי 🧘</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {gameState === GameState.PLAYING && currentQuestion && (
+                  <div className="space-y-8 text-center">
+                    <div className="flex justify-between items-center mb-4">
+                       <span className="bg-indigo-600 text-white px-3 py-1 rounded-full text-sm">ניקוד: {stats.score}</span>
+                       {gameMode === GameMode.TIMED && <span className="text-xl font-bold text-indigo-600">{timer} ⏱️</span>}
+                       <span className="bg-orange-400 text-white px-3 py-1 rounded-full text-sm">רצף: {stats.streak} 🔥</span>
+                    </div>
+
+                    <div className="bg-indigo-50 rounded-3xl p-8 flex justify-center items-center gap-4 text-5xl md:text-6xl font-black text-indigo-900" dir="ltr">
+                      <span className={currentQuestion.missingPart === 'num1' ? 'text-pink-500' : ''}>{currentQuestion.num1}</span>
+                      <span className="text-indigo-300">{currentQuestion.operation}</span>
+                      <span className={currentQuestion.missingPart === 'num2' ? 'text-pink-500' : ''}>{currentQuestion.num2}</span>
+                      <span>=</span>
+                      <span className={currentQuestion.missingPart === 'result' ? 'text-pink-500' : ''}>{currentQuestion.result}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4" dir="ltr">
+                      {currentQuestion.options.map((opt, i) => (
+                        <button key={i} onClick={() => handleAnswer(opt)} className="py-6 rounded-2xl text-3xl font-bold bg-white text-indigo-700 border-2 border-indigo-100 shadow-lg hover:bg-indigo-50">{opt}</button>
+                      ))}
+                    </div>
+                    {feedback && (
+                      <div>
+                        <FeedbackBubble type={feedback.type} message={feedback.message} />
+                        {feedback.type === 'error' && (
+                          <button onClick={() => { setFeedback(null); setIsPaused(false); const q = generateQuestion(level); setCurrentQuestion({...q, startTime: Date.now()}); }} className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-xl font-bold">המשך לתרגיל הבא</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {gameState === GameState.SUMMARY && (
+                  <div className="text-center space-y-6">
+                    <h2 className="text-3xl font-black text-indigo-700">כל הכבוד! 🏆</h2>
+                    <div className="bg-indigo-50 p-6 rounded-2xl grid grid-cols-2 gap-4">
+                      <div><p className="text-gray-500 text-sm">דיוק</p><p className="text-2xl font-bold">{Math.round((stats.correctAnswers/(stats.totalAnswered||1))*100)}%</p></div>
+                      <div><p className="text-gray-500 text-sm">נקודות</p><p className="text-2xl font-bold">{stats.score}</p></div>
+                    </div>
+                    <button onClick={() => setGameState(GameState.START)} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold">חזרה להתחלה</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
