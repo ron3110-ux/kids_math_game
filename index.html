@@ -1,0 +1,41 @@
+
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <!-- שינינו לנקודה לפני הנתיב כדי שזה יעבוד נכון בתיקיות משנה בגיטהאב -->
+    <link rel="manifest" href="./public/manifest.json">
+    <title>הרפתקת המתמטיקה</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Assistant', sans-serif;
+            overflow-x: hidden;
+            touch-action: manipulation;
+        }
+        * {
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "recharts": "https://esm.sh/recharts@^3.6.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3"
+  }
+}
+</script>
+</head>
+<body class="bg-indigo-50">
+    <div id="root"></div>
+    <!-- טעינת הקוד הראשי -->
+    <script type="module" src="./index.tsx"></script>
+</body>
+</html>
